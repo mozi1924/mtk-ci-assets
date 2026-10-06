@@ -1,0 +1,39 @@
+name: Upload Blender to release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Blender version (x.y.z)"
+        required: true
+        default: "5.2.1"
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Blender (linux-x64)
+        run: |
+          set -euo pipefail
+          ver="${{ inputs.version }}"
+          curl -fL --retry 3 -o "blender-${ver}-linux-x64.tar.xz" \
+            "https://download.blender.org/release/Blender${ver%.*}/blender-${ver}-linux-x64.tar.xz"
+          ls -la "blender-${ver}-linux-x64.tar.xz"
+
+      - name: Upload to ci-assets-v1 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver="${{ inputs.version }}"
+          tag="ci-assets-v1"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "CI Assets v1 (temporary)" \
+              --notes "Temporary CI assets for libmozitoolkit / MoziToolKit. Remove later."
+          gh release upload "$tag" "blender-${ver}-linux-x64.tar.xz" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          echo "Uploaded blender-${ver}-linux-x64.tar.xz"
