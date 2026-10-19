@@ -7,33 +7,56 @@ on:
         description: "Blender version (x.y.z)"
         required: true
         default: "5.2.1"
+      platform:
+        description: "Platform to mirror"
+        required: true
+        default: "windows-x64"
+        type: choice
+        options:
+          - windows-x64
+          - linux-x64
+          - macos-arm64
+          - macos-x64
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ci-assets-v1
 
 jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Download Blender (linux-x64)
+      - name: Download Blender
         run: |
           set -euo pipefail
           ver="${{ inputs.version }}"
-          curl -fL --retry 3 -o "blender-${ver}-linux-x64.tar.xz" \
-            "https://download.blender.org/release/Blender${ver%.*}/blender-${ver}-linux-x64.tar.xz"
-          ls -la "blender-${ver}-linux-x64.tar.xz"
+          plat="${{ inputs.platform }}"
+          case "$plat" in
+            windows-*) ext="zip" ;;
+            linux-*) ext="tar.xz" ;;
+            macos-*) ext="dmg" ;;
+            *) echo "::error::Unknown platform: $plat"; exit 1 ;;
+          esac
+          asset="blender-${ver}-${plat}.${ext}"
+          echo "ASSET=$asset" >> "$GITHUB_ENV"
+          echo "Downloading https://download.blender.org/release/Blender${ver%.*}/$asset"
+          curl -fL --retry 3 --retry-delay 5 -o "$asset" \
+            "https://download.blender.org/release/Blender${ver%.*}/$asset"
+          ls -lh "$asset"
+          sha256sum "$asset" > "$asset.sha256"
 
-      - name: Upload to ci-assets-v1 release
+      - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ver="${{ inputs.version }}"
-          tag="ci-assets-v1"
+          tag="$RELEASE_TAG"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
               --title "CI Assets v1 (temporary)" \
               --notes "Temporary CI assets for libmozitoolkit / MoziToolKit. Remove later."
-          gh release upload "$tag" "blender-${ver}-linux-x64.tar.xz" \
+          gh release upload "$tag" "$ASSET" "$ASSET.sha256" \
             --repo "$GITHUB_REPOSITORY" --clobber
-          echo "Uploaded blender-${ver}-linux-x64.tar.xz"
+          echo "Uploaded $ASSET to $tag"
